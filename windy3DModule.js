@@ -29,7 +29,7 @@ class ThreeJs{
         this.canvasContext=null;
         this.canvasWidth = window.innerWidth;//画板宽度
         this.canvasHeight = window.innerHeight;//画板高度
-        this.displayLayers= 10;   //展示层数，最大值为layers-1
+        this.displayLayers= 1;   //展示层数，-1默认为总层数
         this.particlesNumber = 3000;  //生成的粒子个数
         this.speedRate = 0.10;
         this.maxAge=120;
@@ -55,8 +55,8 @@ class ThreeJs{
             size: 10.0,
             max_age:this.maxAge,
             points_number: 4000,
-            speed :  0.085,
-            length_rate : 0.25
+            speed :  0.105,
+            length_rate : 0.08
 
         };
         this._init();
@@ -75,20 +75,22 @@ class ThreeJs{
         this._initLight();
         this._initCamera();
         //Setup IFC Loader
-
+        this.draw();
         var ifcLoader = new IFCLoader();
         ifcLoader.ifcManager.setWasmPath("../three.js-r139/examples/jsm/loaders/ifc/");
         ifcLoader.load(
             "../three.js-r139/examples/models/ifc/rac_advanced_sample_project.ifc",
             function (model) {
+                model.translateX(-50);
+                model.mesh.renderOrder=2;
                 scene.add(model.mesh);
-                renderer.render( scene, camera );
+                // renderer.render( scene, camera );
             }
         );
         // this._initObject();
-        var axisHelper = new THREE.AxesHelper(2500);
-        scene.add(axisHelper);
-        this.draw();
+        // var axisHelper = new THREE.AxesHelper(2500);
+        // scene.add(axisHelper);
+
 
 
         this._initRenderer();
@@ -96,8 +98,11 @@ class ThreeJs{
 
     }
     _initRenderer(){
-        renderer=new THREE.WebGLRenderer({ antialias: true	} );
+        renderer=new THREE.WebGLRenderer({  antialias: true } );//,logarithmicDepthBuffer: true
+
         renderer.setSize(this.canvasWidth, this.canvasHeight);//设置渲染区域尺寸
+
+        renderer.domElement.id = 'renderer_' + name;
         // renderer.setClearColor(0x000000, 1); //设置背景颜色
         document.body.appendChild(renderer.domElement);
         var that=this;
@@ -185,7 +190,7 @@ class ThreeJs{
         do {
             x = this.fRandomByfloat(0,this.windField.cols - 2);
             y = this.fRandomByfloat(0,this.windField.rows - 2);
-            z = this.fRandomByInteger(0,Math.min(this.displayLayers-1,this.windField.layers - 1));
+            z = this.fRandomByInteger(0,this.displayLayers>0?Math.min(this.displayLayers-1,this.windField.layers - 1):this.windField.layers - 1);
         } while ((this.windField.getIn(x, y, z) <= 0||this.windField.isInBound(x,y,z)) && safe++ < 30);
         // console.log(this.uniforms.u_time.value,particle.isCreated)
         var field = this.windField;
@@ -336,10 +341,12 @@ class ThreeJs{
             vertexShader: document.getElementById("vertexShader").textContent,
             fragmentShader: document.getElementById("fragmentShader").textContent,
             transparent: true,
+            depthWrite: false
         });
     }
     draw(){
         let self=this;
+        let i=1;
         for(let curve of this.curves) {
             // console.log(curve.points.length)
             var interval = (curve.points.length- 1)/this.pointInterval ;
@@ -358,6 +365,7 @@ class ThreeJs{
             let lineMaterial = self.initLineMaterial(self.matSetting,pNumber,curve.userData);
 
             let obj = new THREE.Points(geometry,lineMaterial);
+            obj.renderOrder=1;
             scene.add(obj);
             curve.sceneIndex = obj.id;
         }
