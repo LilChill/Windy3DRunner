@@ -5,35 +5,196 @@ import { OrbitControls } from "../three.js-r139/examples/jsm/controls/OrbitContr
 let camera=null;
 let renderer=null;
 let scene = null;
+
 $(function(){
-    var testObj=null;
-    var grid=null;
+    var params;
     $.ajax({
         type: "get",
         url: "data/data3D.json",
         dataType: "json",
         async:false,
         success: function (response) {
-            testObj = new ThreeJs(response);
+            params = {
+                canvasWidth:window.innerWidth,
+                canvasHeight:window.innerHeight,
+                speedRate:0.10,
+                speed:0.115,
+                particlesNumber:1000,
+                displayLayers:1,
+                maxAge:120,
+                color: new THREE.Vector3(
+                Math.random() * 0.6 + 0.4,//Math.random() * 0.6 + 0.4
+                0.4 + 0.2,
+                0.4 + 0.2),
+                pointSize:10.0,
+                lengthRate: 0.12
+            };
+            windy = new ThreeJs(response,params);
         },
         error: function (errorMsg) {
             console.log("请求数据失败!");
         }
     });
+
+    var canrefresh = -1,canrefresh2 = -1;//拖动粒子个数和存活时间滑块时，不能随时刷新，需要隔一段时间刷新，避免卡顿
+    layui.use('slider', function(){
+        var slider = layui.slider;
+        slider.render({
+            elem: '#windy_count',
+            min:100,
+            max:10000,
+            value:params.particlesNumber,
+            tips:false,
+            input:true,
+            theme:'#3b86ca',
+            change: function(value){
+                if(windy){
+                    clearTimeout(canrefresh);
+                    windy.particlesNumber = value;
+                    canrefresh = setTimeout(function(){
+                        windy.redraw();
+                    },500);
+                }
+            }
+        });
+    });
+    layui.use('slider', function(){
+        var slider = layui.slider;
+        slider.render({
+            elem: '#windy_layers',
+            min:-1,
+            max:20,
+            value:params.displayLayers,
+            tips:false,
+            input:true,
+            theme:'#3b86ca',
+            change: function(value){
+                if(windy){
+                    clearTimeout(canrefresh);
+                    windy.displayLayers = value;
+                    canrefresh = setTimeout(function(){
+                        windy.redraw();
+                    },500);
+                }
+            }
+        });
+    });
+    layui.use('slider', function(){
+        var slider = layui.slider;
+        slider.render({
+            elem: '#windy_length',
+            min:1.0,
+            max:100.0,
+            value:params.lengthRate*100,
+            tips:false,
+            input:true,
+            theme:'#3b86ca',
+            change: function(value){
+                if(windy){
+                    windy.pointSize = value/100;
+                }
+            }
+        });
+    });
+    layui.use('slider', function(){
+        var slider = layui.slider;
+        slider.render({
+            elem: '#windy_linewidth',
+            min:1.0,
+            max:20.0,
+            value:params.pointSize,
+            tips:false,
+            input:true,
+            theme:'#3b86ca',
+            change: function(value){
+                if(windy){
+                    windy.pointSize = value;
+                }
+            }
+        });
+    });
+    layui.use('slider', function(){
+        var slider = layui.slider;
+        slider.render({
+            elem: '#windy_speed',
+            min:1,
+            max:1000,
+            value:params.speed,
+            tips:false,
+            input:true,
+            theme:'#3b86ca',
+            change: function(value){
+                if(windy){
+                    windy.speed = value/1000;
+                }
+            }
+        });
+    });
+    layui.use('slider', function(){
+        var slider = layui.slider;
+        slider.render({
+            elem: '#windy_age',
+            min:10,
+            max:500,
+            value:params.maxAge,
+            tips:false,
+            input:true,
+            theme:'#3b86ca',
+            change: function(value){
+                if(windy){
+                    clearTimeout(canrefresh2);
+                    windy.maxAge = value;
+                    canrefresh2 = setTimeout(function(){
+                        windy.redraw();
+                    },500);
+                }
+            }
+        });
+    });
+    // 颜色选择插件初始化
+    $('.windycanvas_picker').each(function(inx,dom){
+        $(dom).ColorPicker({
+            color: $(dom).val(),
+            pickerDom:$(dom),
+            pickerDomInx:0,
+            onShow: function (colpkr) {
+                $(colpkr).fadeIn(300);
+                return false;
+            },
+            onHide: function (colpkr) {
+                $(colpkr).fadeOut(300);
+                return false;
+            },
+            //onchange方法改过，pickerdom,inx是新增的属性
+            //pickerdom：当前点击节点，inx就是pickerDomInx属性，跟for循环中i相同，用来更新颜色之后同步修改颜色数组
+            onChange: function (hsb, hex, rgb,pickerdom,inx) {
+                var colorvl = '#' + hex;
+                $(pickerdom).val(colorvl);
+                $(pickerdom).next().css({ "background-color":  colorvl});
+                if(windy){
+                    windy.color = colorvl;
+                }
+            }
+        });
+    });
 })
 
+
 class ThreeJs{
-    constructor(json) {
+    constructor(json,params) {
         this.light=null;
         this.cube=null;
         this.canvasContext=null;
-        this.canvasWidth = window.innerWidth;//画板宽度
-        this.canvasHeight = window.innerHeight;//画板高度
-        this.displayLayers= 1;   //展示层数，-1默认为总层数
-        this.particlesNumber = 3000;  //生成的粒子个数
-        this.speedRate = 0.10;
-        this.maxAge=120;
-        this.color=0xe0761a;
+        this.canvasWidth = params.canvasWidth||window.innerWidth;//画板宽度
+        this.canvasHeight = params.canvasHeight||window.innerHeight;//画板高度
+        this.displayLayers= params.displayLayers||-1;   //展示层数，-1默认为总层数
+        this.particlesNumber = params.particlesNumber ||3000;  //生成的粒子个数
+        this.speedRate = params.speedRate ||0.10;
+        this.speed = params.speed||0.105;
+        this.maxAge=params.maxAge||120;
+        this.color=params.color ;
+        this.pointSize = params.pointSize||10.0;
+        this.lengthRate=params.lengthRate||0.08;
         this.initOpacity=1; //粒子初始透明度
         this.windData = json;
         this.windField=null;
@@ -43,20 +204,21 @@ class ThreeJs{
         this.frameTime = 10;//每秒刷新次数，因为requestAnimationFrame固定每秒60次的渲染，所以如果不想这么快，就把该数值调小一些
         this.pointInterval=0.015;
         this.uniforms = {
-            u_time: {value: 0.0}
-
+            u_time: {value: 0.0},
+            // speed:{value:this.speed},
+            // size:{value:this.pointSize},
+            // startTime:{value:0.0},
+            // maxAge:{value:this.maxAge},
+            // color:{value:this.color}
         };
 
         this.matSetting = {
-            color:new THREE.Vector3(
-                Math.random() * 0.6 + 0.4,//Math.random() * 0.6 + 0.4
-                0.4 + 0.2,
-                0.4 + 0.2),
-            size: 10.0,
+            color:this.color,
+            size: this.pointSize,
             max_age:this.maxAge,
             points_number: 4000,
-            speed :  0.105,
-            length_rate : 0.08
+            speed :  this.speed,
+            length_rate : this.lengthRate
 
         };
         this._init();
@@ -68,6 +230,7 @@ class ThreeJs{
         for (var i = 0; i < this.particlesNumber; i++) {
             this.particles.push(this.randomParticle(new CanvasParticle()));
         }
+
         // let curves= this.initCircleCurveGroup();
         // console.log(curves)
         //group=new THREE.Group();
@@ -82,18 +245,19 @@ class ThreeJs{
             "../three.js-r139/examples/models/ifc/rac_advanced_sample_project.ifc",
             function (model) {
                 model.translateX(-50);
+                model.translateZ(19);
                 model.mesh.renderOrder=2;
                 scene.add(model.mesh);
-                // renderer.render( scene, camera );
             }
         );
         // this._initObject();
-        // var axisHelper = new THREE.AxesHelper(2500);
-        // scene.add(axisHelper);
+        var axisHelper = new THREE.AxesHelper(2500);
+        scene.add(axisHelper);
 
 
 
         this._initRenderer();
+        // console.log(renderer)
 
 
     }
@@ -102,7 +266,7 @@ class ThreeJs{
 
         renderer.setSize(this.canvasWidth, this.canvasHeight);//设置渲染区域尺寸
 
-        renderer.domElement.id = 'renderer_' + name;
+        // renderer.domElement.id = 'renderer_' + name;
         // renderer.setClearColor(0x000000, 1); //设置背景颜色
         document.body.appendChild(renderer.domElement);
         var that=this;
@@ -143,6 +307,14 @@ class ThreeJs{
         camera.position.z = 70;
         camera.position.y = 25;
         camera.position.x = 90;
+    }
+    //根据现有参数重新生成风场
+    redraw(){
+        window.cancelAnimationFrame(this.animateFrame);
+        this.particles = [];
+        this.curves=[];
+        // renderer.properties.remove(material);
+        this._init();
     }
     _parseWindJson() {
         var header = null,
@@ -312,17 +484,19 @@ class ThreeJs{
      * */
     initLineMaterial(setting,pNumber,startTime) {
         // let number = setting ? Number(setting.number) || 1.0 : 1.0;
-        let speed = setting ? Number(setting.speed) || 1.0 : 1.0;
+        let speed =setting ? Number(setting.speed) || 1.0 : 1.0;//this.uniforms.speed;//
         let length = Number(setting.length_rate*pNumber) ;
         let points_number = pNumber ;
-        let size = setting ? Number(setting.size) || 2.0 : 2.0;
-        let start_time = startTime;
-        let max_age = setting?Number(setting.max_age) ||120 :120;
+        let size = setting ? Number(setting.size) || 2.0 : 2.0;//this.uniforms.size;//
+        let start_time = startTime;//this.uniforms.startTime;//
+        let max_age = setting?Number(setting.max_age) ||120 :120;//this.uniforms.maxAge;//
         let color =  setting ? setting.color:new THREE.Vector3(
             0.4 + 0.2,//Math.random() * 0.6 + 0.4
             0.4 + 0.2,
             0.4 + 0.2
         );
+            // this.uniforms.color;
+
 
         //console.log(start_time)
         let singleUniforms = {

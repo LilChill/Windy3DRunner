@@ -5,7 +5,7 @@ body,html{
 	font-family:"微软雅黑";
   background-color: #f2f2f2;
 }
-*{ 
+*{
 	margin:0;
 	padding:0;
 }
@@ -97,7 +97,7 @@ div
 }
 #contentMenu::-webkit-scrollbar-thumb{
   background: none;
-  
+
 }
 #contentMenu::-webkit-scrollbar{
   width: 0px;
@@ -209,7 +209,7 @@ div
   transition: all .2s;
     -webkit-transition: all .2s;
 }
-.header{ 
+.header{
   position: absolute;
   top: 0;
   left: 0;
