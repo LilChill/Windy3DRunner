@@ -1,33 +1,37 @@
 import * as THREE from 'three';
-import { IFCLoader } from "./three.js-r139/examples/jsm/loaders/IFCLoader.js";
+import WebGL from './three.js-r145/examples/jsm/capabilities/WebGL.js';
+import { IFCLoader } from "./three.js-r145/examples/jsm/loaders/IFCLoader.js";
 
-import { OrbitControls } from "../three.js-r139/examples/jsm/controls/OrbitControls.js";
+import { OrbitControls } from "../three.js-r145/examples/jsm/controls/OrbitControls.js";
+import {Vector2} from "three";
 let camera=null;
 let renderer=null;
 let scene = null;
-
+let gl=null;
+let buffer=null;
+let program = null;
 $(function(){
     var params;
     $.ajax({
         type: "get",
-        url: "data/data3D.json",
+        url: "data/newData/grid20220827063000.json",
         dataType: "json",
         async:false,
         success: function (response) {
             params = {
                 canvasWidth:window.innerWidth,
                 canvasHeight:window.innerHeight,
-                speedRate:0.10,
-                speed:0.115,
+                speedRate:0.05, //线的生成速率 （越慢越光滑）
+                speed:0.155, //绘制速率
                 particlesNumber:1000,
-                displayLayers:1,
+                displayLayers:-1,
                 maxAge:120,
                 color: new THREE.Vector3(
                 Math.random() * 0.6 + 0.4,//Math.random() * 0.6 + 0.4
                 0.4 + 0.2,
                 0.4 + 0.2),
-                pointSize:10.0,
-                lengthRate: 0.12
+                pointSize:8.0,
+                lengthRate: 0.20
             };
             windy = new ThreeJs(response,params);
         },
@@ -184,7 +188,6 @@ class ThreeJs{
     constructor(json,params) {
         this.light=null;
         this.cube=null;
-        this.canvasContext=null;
         this.canvasWidth = params.canvasWidth||window.innerWidth;//画板宽度
         this.canvasHeight = params.canvasHeight||window.innerHeight;//画板高度
         this.displayLayers= params.displayLayers||-1;   //展示层数，-1默认为总层数
@@ -210,6 +213,7 @@ class ThreeJs{
             // startTime:{value:0.0},
             // maxAge:{value:this.maxAge},
             // color:{value:this.color}
+            speedList:  { type: "v", value: [] },
         };
 
         this.matSetting = {
@@ -234,15 +238,32 @@ class ThreeJs{
         // let curves= this.initCircleCurveGroup();
         // console.log(curves)
         //group=new THREE.Group();
+        if ( WebGL.isWebGL2Available() === false ) {
+
+            document.body.appendChild( WebGL.getWebGL2ErrorMessage() );
+            return;
+
+        }
         this._initScene();
         this._initLight();
         this._initCamera();
         //Setup IFC Loader
+        this._initModel();
+        // this._initObject();
+        // var axisHelper = new THREE.AxesHelper(2500);
+        // scene.add(axisHelper);
+        this._initRenderer();
+        // this._initShader();
         this.draw();
+        // console.log(renderer)
+
+
+    }
+    _initModel(){
         var ifcLoader = new IFCLoader();
-        ifcLoader.ifcManager.setWasmPath("../three.js-r139/examples/jsm/loaders/ifc/");
+        ifcLoader.ifcManager.setWasmPath("../three.js-r145/examples/jsm/loaders/ifc/");
         ifcLoader.load(
-            "../three.js-r139/examples/models/ifc/rac_advanced_sample_project.ifc",
+            "../three.js-r145/examples/models/ifc/rac_advanced_sample_project.ifc",
             function (model) {
                 model.translateX(-50);
                 model.translateZ(19);
@@ -250,20 +271,15 @@ class ThreeJs{
                 scene.add(model.mesh);
             }
         );
-        // this._initObject();
-        var axisHelper = new THREE.AxesHelper(2500);
-        scene.add(axisHelper);
-
-
-
-        this._initRenderer();
-        // console.log(renderer)
-
-
     }
     _initRenderer(){
         renderer=new THREE.WebGLRenderer({  antialias: true } );//,logarithmicDepthBuffer: true
+        if ( WebGL.isWebGL2Available() === false ) {
 
+            document.body.appendChild( WebGL.getWebGL2ErrorMessage() );
+            return;
+
+        }
         renderer.setSize(this.canvasWidth, this.canvasHeight);//设置渲染区域尺寸
 
         // renderer.domElement.id = 'renderer_' + name;
@@ -271,7 +287,7 @@ class ThreeJs{
         document.body.appendChild(renderer.domElement);
         var that=this;
         const loopTime = 10 * 1000; // loopTime: 循环一圈的时间
-        this.canvasContext=renderer.getContext();
+        gl=renderer.getContext('webgl2');
         function render (){
             // console.log(camera.position)
             renderer.render(scene,camera);//执行渲染操作
@@ -281,14 +297,75 @@ class ThreeJs{
             that.uniforms.u_time.value+=0.01;
 
         }
-
         render();
         var controls = new OrbitControls(camera,renderer.domElement);//创建控件对象
+        window.addEventListener( 'resize', this.onWindowResize, false );
+
+    }
+    onWindowResize() {
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize( window.innerWidth, window.innerHeight );
+
+    }
+    //声明初始化着色器函数
+    _initShader(){
+        gl=renderer.getContext('webgl2');
+        //顶点着色器源码
+        var vertexShaderSource = document.getElementById('vertexShader').textContent;
+        //片元着色器源码
+        var fragmentShaderSource = document.getElementById('fragmentShader').textContent;
+        //初始化着色器
+
+        //创建顶点着色器对象
+        var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        //创建片元着色器对象
+        var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        //引入顶点、片元着色器源代码
+        gl.shaderSource(vertexShader,vertexShaderSource);
+        gl.shaderSource(fragmentShader,fragmentShaderSource);
+        //编译顶点、片元着色器
+        gl.compileShader(vertexShader);
+        gl.compileShader(fragmentShader);
+        if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+            throw new Error(gl.getShaderInfoLog(vertexShader))
+        }
+        if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+            throw new Error(gl.getShaderInfoLog(fragmentShader))
+        }
+        //创建程序对象program
+        var prg = gl.createProgram();
+        //附着顶点着色器和片元着色器到program
+        gl.attachShader(prg,vertexShader);
+        gl.attachShader(prg,fragmentShader);
+        //链接program
+        gl.linkProgram(prg);
+        if (!gl.getProgramParameter(prg, gl.LINK_STATUS)) {
+            throw new Error(gl.getProgramInfoLog(prg))
+        }
+        gl.detachShader(prg, vertexShader)
+        gl.deleteShader(vertexShader)
+        gl.detachShader(prg, fragmentShader)
+        gl.deleteShader(fragmentShader)
+        //使用program
+        gl.useProgram(prg);
+        //console.log(gl)
+        program= prg;
+    }
+    initBuffers(){
+        buffer=gl.createBuffer();
+        if(!buffer){
+            console.log("创建缓冲区对象失败");
+            return -1;
+        }
+        gl.bindBuffer(gl.UNIFORM_BUFFER,buffer);
 
     }
     _initScene(){
         scene= new THREE.Scene()
-        scene.background = new THREE.Color( 0x8cc7de );
+        scene.background = new THREE.Color( 0x8cc7de );//0x8cc7de
     }
     _initLight() {
         const directionalLight1 = new THREE.DirectionalLight( 0xffeeff, 0.8 );
@@ -322,17 +399,31 @@ class ThreeJs{
         this.windData.forEach(function (record) {
             header=record.header;
             var data = record['data'];
-            var speed=[],
-                angel=[];
+            // var speed=[],
+            //     angel=[];
+            // for(var i=0;i<data.length;i++){
+            //     var temp=data[i].split("/");
+            //     speed.push(parseFloat(temp[0]));
+            //     angel.push(parseFloat(temp[1]));
+            // }
+            // component.push({
+            //     height: record.header.height,
+            //     speed:speed,
+            //     angel:angel
+            // });
+            var uComponent=[],
+                vComponent=[];
             for(var i=0;i<data.length;i++){
                 var temp=data[i].split("/");
-                speed.push(parseFloat(temp[0]));
-                angel.push(parseFloat(temp[1]));
+                uComponent.push(parseFloat(temp[0]));
+                vComponent.push(parseFloat(temp[1]));
             }
             component.push({
                 height: record.header.height,
-                speed:speed,
-                angel:angel
+                uComponent:uComponent,
+                vComponent:vComponent
+                // speed:speed,
+                // angel:angel
             });
         });
         // console.log(component)
@@ -361,14 +452,14 @@ class ThreeJs{
 
         do {
             x = this.fRandomByfloat(0,this.windField.cols - 2);
-            y = this.fRandomByfloat(0,this.windField.rows - 2);
+            y = this.fRandomByfloat(0,(this.windField.rows - 2)/2);
             z = this.fRandomByInteger(0,this.displayLayers>0?Math.min(this.displayLayers-1,this.windField.layers - 1):this.windField.layers - 1);
-        } while ((this.windField.getIn(x, y, z) <= 0||this.windField.isInBound(x,y,z)) && safe++ < 30);
+        } while ((this.windField.getIn(x, y, z)[2] <= 0||this.windField.isInBound(x,y,z)) && safe++ < 30);
         // console.log(this.uniforms.u_time.value,particle.isCreated)
         var field = this.windField;
         var uvw = field.getIn(x, y, z);
-        var nextX = x +  this.speedRate * uvw[0]*Math.cos(uvw[1]);
-        var nextY = y +  this.speedRate * uvw[0]*Math.sin(uvw[1]);
+        var nextX = x +  this.speedRate * uvw[0];// x +  this.speedRate * uvw[0]*Math.cos(uvw[1]);
+        var nextY = y +  this.speedRate * uvw[1];// y +  this.speedRate * uvw[0]*Math.sin(uvw[1]);
         var nextZ = z;
         // var nextZ = z +  this.speedRate * uvw[2];
         particle.curvesPoints=[];
@@ -379,8 +470,8 @@ class ThreeJs{
         particle.ty = nextY;
         particle.tz=nextZ;
         particle.opacity=this.initOpacity;
-        particle.speed = uvw;
-        particle.age = this.fRandomByInteger(2,this.maxAge);//每一次生成都不一样
+        particle.speed = uvw[2];
+        particle.age = this.maxAge//this.fRandomByInteger(2,this.maxAge);//每一次生成都不一样
         this.initCircleCurveGroup(particle)
         // if(particle.isCreated===false){
         //     this.initCircleCurveGroup(particle)
@@ -404,7 +495,18 @@ class ThreeJs{
 
         return newArr;
     }
+    _antiMap(n0,n1,n2){
+        var field = this.windField,
+            fieldWidth = field.cols,
+            fieldHeight = field.rows,
+            fieldLayers = field.layers,
+            originArr = [0,0,0];
+        originArr[0] = (n0*8+(this.canvasWidth/2))/this.canvasWidth*fieldWidth;
+        originArr[1] = (n2*8+(this.canvasHeight/2))/this.canvasHeight*fieldHeight;
+        originArr[2] = (n1/100)*fieldLayers;
 
+        return originArr;
+    }
     /**
      *初始化线条路径
      *
@@ -428,21 +530,19 @@ class ThreeJs{
             x=tx;
             y=ty;
             //z=tz;
-            tx = tx + self.speedRate * uvw[0] * Math.cos(uvw[1]);
-            ty = ty + self.speedRate * uvw[0] * Math.sin(uvw[1]);
+            tx = tx + self.speedRate * uvw[0]; //tx + self.speedRate * uvw[0] * Math.cos(uvw[1]);
+            ty = ty + self.speedRate * uvw[1]; //ty + self.speedRate * uvw[0] * Math.sin(uvw[1]);
         }
         var curve = new THREE.CatmullRomCurve3(particle.curvesPoints,false);
         curve.userData = this.uniforms.u_time.value;
         if (curve.points.length<=1){
-            curve.points=[];
+
+            this.randomParticle(particle);
         }
-
-        self.curves.push(curve)
-        particle.curveIndex = this.curves.length-1;
-
-
-
-
+        else{
+            self.curves.push(curve)
+            particle.curveIndex = this.curves.length-1;
+        }
     }
     /**
      * 更新线条路径
@@ -482,7 +582,7 @@ class ThreeJs{
     /**
      * 初始化材质
      * */
-    initLineMaterial(setting,pNumber,startTime) {
+    initLineMaterial(setting,pNumber,startTime,speedList) {
         // let number = setting ? Number(setting.number) || 1.0 : 1.0;
         let speed =setting ? Number(setting.speed) || 1.0 : 1.0;//this.uniforms.speed;//
         let length = Number(setting.length_rate*pNumber) ;
@@ -490,11 +590,7 @@ class ThreeJs{
         let size = setting ? Number(setting.size) || 2.0 : 2.0;//this.uniforms.size;//
         let start_time = startTime;//this.uniforms.startTime;//
         let max_age = setting?Number(setting.max_age) ||120 :120;//this.uniforms.maxAge;//
-        let color =  setting ? setting.color:new THREE.Vector3(
-            0.4 + 0.2,//Math.random() * 0.6 + 0.4
-            0.4 + 0.2,
-            0.4 + 0.2
-        );
+        let color =  new THREE.Color( 0xffffff * Math.random() );
             // this.uniforms.color;
 
 
@@ -505,50 +601,130 @@ class ThreeJs{
             length : { type: "f", value: length },
             max_age: { type: "f", value: max_age },
             points_number: { type: "f", value: points_number },
-            speed: { type: "f", value: speed },
+            speed: {  type: "f", value: speed },
+            speedList:{ value:speedList},
             uSize: { type: "f", value: size },
-            color: { type: "v3", value: color},
-        };
+            color: { value: color},
+            colorList: {value:[new THREE.Color( 0xcc00ff ),
+                    new THREE.Color( 0x002aff),
+                    new THREE.Color(0x0054ff ),
+                    new THREE.Color( 0x007eff),
+                    new THREE.Color( 0x00a8ff),
+                    new THREE.Color( 0x00d2ff),
+                    new THREE.Color( 0x14d474),
+                    new THREE.Color(0xa6dd00 ),
+                    new THREE.Color( 0xffe600),
+                    new THREE.Color( 0xffb300),
+                    new THREE.Color( 0xff8000),
+                    new THREE.Color(0xff4d00 ),
+                    new THREE.Color( 0xff1a00),
+                    new THREE.Color( 0xe60000),
+                    new THREE.Color(0xb30000 )]}
+        }
+        ;
 
         return new THREE.ShaderMaterial({
             uniforms: singleUniforms,
             vertexShader: document.getElementById("vertexShader").textContent,
             fragmentShader: document.getElementById("fragmentShader").textContent,
             transparent: true,
-            depthWrite: false
+            depthWrite: false,
+            glslVersion: THREE.GLSL3
         });
     }
     draw(){
+        // const gl=this.gl;
+        // const buffer=gl.createBuffer();
+        // gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
         let self=this;
         let i=1;
+        let maxLength=0;
+        // this.initBuffers();
+        // gl.uniformBlockBinding(
+        //     program,
+        //     gl.getUniformBlockIndex(program, 'Speed'),
+        //     0);
+        // 批量传递数组元素值
+        //var speedList =gl.getUniformLocation(program, "speedList")
         for(let curve of this.curves) {
             // console.log(curve.points.length)
-            var interval = (curve.points.length- 1)/this.pointInterval ;
+
+            var curveLength=self.getCurveLength(curve.points)
+
+            var interval = (curveLength)/this.pointInterval ;
+
             var points = curve.getPoints(interval);
             var geometry = new THREE.BufferGeometry().setFromPoints(points);
             let length = points.length;
             var pNumber = length;
-            //console.log(pNumber,length)
-            var indexes = new Float32Array(length);
+            var indexes = new Float32Array(length)
+            var speed=new Float32Array(length);
+
             for (let i = 0; i < points.length; i += 1) {
                 indexes[i] = i;
+                var trans=self._antiMap(points[i].x,points[i].y,points[i].z);
+                // console.log(trans,self.windField.rows,self.windField.cols);
+
+                speed[i]=self.windField.getIn(Math.floor(trans[0]),Math.floor(trans[1]),Math.floor(trans[2]))[2];
+
+
             }
-            geometry.setAttribute("aIndex", new THREE.BufferAttribute(indexes, 1));
+            if(points.length>maxLength) maxLength=points.length;
+            // const colorUniformsGroup = new THREE.UniformsGroup();
+            // colorUniformsGroup.setName('colorData');
+            // colorUniformsGroup.add(new THREE.Uniform(new THREE.Color( 0x333333 )));
+            // colorUniformsGroup.add(new THREE.Uniform(new THREE.Color( 0x333333 )));
+            // colorUniformsGroup.add(new THREE.Uniform(new THREE.Color( 0xaaaaaa )));
+            // colorUniformsGroup.add(new THREE.Uniform(new THREE.Color( 0xcccccc )));
+            // console.log(speed)
+            //gl.uniform1fv(speedList,speed);
+            // gl.bufferData(gl.UNIFORM_BUFFER,speed.length,buffer,gl.STATIC_DRAW);
+            // gl.bindBufferBase(gl.UNIFORM_BUFFER,0,speed);
+            // this.uniforms.speedList=speed;
+            geometry.setAttribute("aIndex", new THREE.Float32BufferAttribute(indexes, 1));
+            //geometry.setAttribute("aSpeed", new THREE.Float32BufferAttribute(speed,1));
+
+            // console.log(geometry.attributes);
             geometry.verticesNeedUpdate = true;
             //curve.userData = self.uniforms.u_time;
-            let lineMaterial = self.initLineMaterial(self.matSetting,pNumber,curve.userData);
+            let lineMaterial = self.initLineMaterial(self.matSetting,pNumber,curve.userData,speed);
 
             let obj = new THREE.Points(geometry,lineMaterial);
-            obj.renderOrder=1;
+            // obj.material.uniformsGroup = [colorUniformsGroup];
+            // obj.material.uniforms.c.value=[0x333333,0xaaaaaa,0xcccccc,0x333333,0xaaaaaa,0xcccccc];
+            // for(let i=0;i<6;i++){
+            //     obj.material.uniforms.c.value[i]=0x333333;
+            // }
+            // console.log(obj.material)
+            // console.log(obj.material.uniformsGroup)
+            // obj.renderOrder=1;
+            console.log(obj)
             scene.add(obj);
             curve.sceneIndex = obj.id;
         }
 
-
+        // console.log(maxLength)
         // console.log(scene.children)
 
     }
+    getCurveLength(points){
 
+        var length=0;
+        var x0,x1,y0,y1;
+        for(var i=1;i<points.length;i++){
+            let a=points[i-1];
+            let b=points[i];
+            x0=a.x;
+            x1=b.x;
+            y0=a.y;
+            y1=b.y;
+
+            length+=Math.sqrt((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0));
+        }
+
+        if(length===0) console.log(points)
+        return length;
+    }
 }
 
 class GridSpace{
@@ -590,15 +766,17 @@ class GridSpace{
         this.grid=[];
 
         var n=0,
-            layers = null,rows=null,
+            layers = null,rows=null,uv=null,
             i,j,k;
         for(k=0;k<this.layers;k++){
             layers=[];
             for(j=0;j<this.rows;j++){
                 rows=[];
                 for(i=0;i<this.cols;i++){
-                    var uvw= [component[k].speed[j*this.cols+i],component[k].angel[j*this.cols+i]];
-                    rows.push(uvw);
+                    // var uvw= [component[k].speed[j*this.cols+i],component[k].angel[j*this.cols+i]];
+                    // rows.push(uvw);
+                    uv=this._calcUV(component[k].uComponent[j*this.cols+i],component[k].vComponent[j*this.cols+i]);
+                    rows.push(uv);
                 }
                 layers.push(rows);
             }
@@ -609,16 +787,22 @@ class GridSpace{
     }
     _calcUVW(u,v,w){
         var val=Math.sqrt(u * u + v * v);
-        return [u, v,w, Math.sqrt(val * val + w * w)];
+        return [u, v, w, Math.sqrt(val * val + w * w)];
+    }
+    _calcUV(u, v) {
+        return [+u, +v, Math.sqrt(u * u + v * v)];
     }
     //双线性插值计算给定节点的速度
     _bilinearInterpolation (tx, ty, g00, g10, g01, g11) {
         var rx = (1 - tx);
         var ry = (1 - ty);
         var a = rx * ry, b = tx * ry, c = rx * ty, d = tx * ty;
-        var speed = g00[0] * a + g10[0] * b + g01[0] * c + g11[0] * d;
-        var angel = g00[1] * a + g10[1] * b + g01[1] * c + g11[1] * d;
-        return [speed,angel];
+        // var speed = g00[0] * a + g10[0] * b + g01[0] * c + g11[0] * d;
+        // var angel = g00[1] * a + g10[1] * b + g01[1] * c + g11[1] * d;
+        // return [speed,angel];
+        var u = g00[0] * a + g10[0] * b + g01[0] * c + g11[0] * d;
+        var v = g00[1] * a + g10[1] * b + g01[1] * c + g11[1] * d;
+        return this._calcUV(u,v);
     }
     //三线性插值计算给定节点的速度
     _trilinearInterpolation(tx, ty, tz, g000,g100,g010,g110,g001,g101,g011,g111) {
@@ -633,12 +817,18 @@ class GridSpace{
         return [speed,angel];
     }
     getIn(x, y, z) {
+        // console.log(x,y)
         var x0 = Math.floor(x),//向下取整
             y0 = Math.floor(y),
             // z0=Math.floor(z),
             x1, y1,z1;
         if (x0 === x && y0 === y) {  //x0 === x && y0 === y&&z0===z
-            return this.grid[z][y][x];
+            try {
+                return this.grid[z][y][x];
+            }catch (e) {
+                //console.log(x,y)
+            }
+
         }
 
         x1 = x0 + 1;
@@ -664,7 +854,7 @@ class CanvasParticle{
         this.y = null;//粒子初始y位置(同上)
         this.z = null;//粒子初始z位置(同上)
         this.tx = null;//粒子下一步将要移动的x位置，这个需要计算得来
-        this.ty = null;//粒子下一步将要移动的y位置，这个需要计算得来
+        this.ty = null;//粒子下一步将要移动的y位置，这个需要计算得来P
         this.tz = null;//粒子下一步将要移动的z位置，这个需要计算得来
         this.age = null;//粒子生命周期计时器，每次-1
         this.opacity=null;

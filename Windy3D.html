@@ -28,8 +28,8 @@
     <script type="importmap">
       {
         "imports": {
-          "three": "/three.js-r139/build/three.module.js",
-          "IFCLoader":"/three.js-r139/examples/jsm/loaders/IFCLoader.js"
+          "three": "/three.js-r145/build/three.module.js",
+          "IFCLoader":"/three.js-r145/examples/jsm/loaders/IFCLoader.js"
         }
       }
     </script>
@@ -84,7 +84,7 @@
 <body>
     <div id="canvas-frame"></div>
     <div id='fpsdiv'>FPS获取中</div>
-    <div id='paramsDiv'>
+    <div id='paramsDiv' style="display: none">
 
         <div class='windycanvas_row'>
             <div class='name'>粒子个数：</div>
@@ -140,75 +140,114 @@
 <!--        </div>-->
     </div>
     <script id="vertexShader" type="x-shader/x-vertex">
-            varying vec2 vUv;
+
+            out vec2 vUv;
             uniform float u_time;
             attribute float aIndex;
-
-            uniform float speed;
-            uniform float max_age;
-            uniform float start_time;
+            //attribute float aSpeed;
             uniform float uSize;
             uniform float length;
             uniform float points_number;
-            varying float vSize;
-            varying float opacity;
+            uniform float speed;
+            out float opacity;
+            #define max 1000
+            uniform float speedList[max];
+            float currentEnd =0.0;
+            out float level;
             void main()
             {
-                highp float start_point=(u_time-start_time)*speed;
-                highp float end_point = start_point+length;
                 vUv = uv;
                 //opacity=percent;
                 float size = uSize;
-                float newStartTime = 0.0;
-                float newStartIndex = 0.0;
+                float curSpeed;
                 float i=0.0;
-                float index = mod(aIndex , points_number);
                 // 根据时间确定当前飞线的位置， 以结束点为准
-                    float currentEnd =mod(points_number * ((u_time) * speed),points_number);//points_number* mod(u_time-start_time,points_number/speed) * speed;// //
-                    //float currentEnd2 = clamp(currentEnd-length-20.0,0.0,points_number);
-                    if(currentEnd-length+1.0<0.0) { //当前飞线结束点回到左边，还剩一部分在右边
-                        if(aIndex<=currentEnd){
-                            // 设置渐变的尺寸，头大尾小
-                            float sizePct = (length - (currentEnd - aIndex)) / length;
-                            size *= sizePct;
-                            opacity = 1.0;
-                        }else if(aIndex>=(currentEnd+points_number-length+1.0)){
-                            float sizePct = (length - (currentEnd +points_number - aIndex)) / length;
-                            size *= sizePct;
-                            opacity = 1.0;
-                        }else{
-                        opacity=0.0;}
+                //float endSpeed = speed[int(currentEnd)];
+
+                currentEnd =mod((u_time * speed *1000.0 ),points_number);
+
+
+
+                //vColor = colorList.c1;
+                if(currentEnd - length + 1.0<0.0) { //当前飞线结束点回到左边，还剩一部分在右边
+                    if(aIndex<=currentEnd){
+                        // 设置渐变的尺寸，头大尾小
+                        float sizePct = (length - (currentEnd - aIndex)) / length;
+                        size *= sizePct;
+                        opacity = 1.0;
+
+                    }else if(aIndex>=(currentEnd+points_number-length+1.0)){
+                        float sizePct = (length - (currentEnd +points_number - aIndex)) / length;
+                        size *= sizePct;
+                        opacity = 1.0;
 
                     }else{
-                        // 判断当前像素点是否在飞线范围内，如果在范围内设置尺寸和透明度
-                        if (aIndex <= currentEnd && aIndex > currentEnd - length) {
-                            // 设置渐变的尺寸，头大尾小
-                            float sizePct = (length - (currentEnd - aIndex)) / length;
-                            size *= sizePct;
-                            opacity = 1.0;
-                        } else {
-                            opacity = 0.0;
-                        }
+                        opacity=0.0;
+                        size=0.0;
                     }
+                }else{
+                    // 判断当前像素点是否在飞线范围内，如果在范围内设置尺寸和透明度
+                    if (aIndex <= currentEnd && aIndex > currentEnd - length) {
+                    // 设置渐变的尺寸，头大尾小
+                        float sizePct = (length - (currentEnd - aIndex)) / length;
+                        size *= sizePct;
+                        opacity = 1.0;
+
+                    } else {
+                            opacity = 0.0;
+                            size=0.0;
+                        }
+                }
                     // 设置点的大小
                     gl_PointSize = size * 0.4;
+                    float s = speedList[int(currentEnd)];
+                    if(s>=0.0&&s<2.0){
+                        level = 0.0;
+                    }else if(s>=2.0&&s<4.0){
+                        level = 1.0;
+                    }else if(s>=4.0&&s<6.0){
+                        level=2.0;
+                    }else if(s>=6.0&&s<8.0){
+                        level=3.0;
+                    }else if(s>=8.0&&s<10.0){
+                        level=4.0;
+                    }else if(s>=10.0&&s<12.0){
+                        level=5.0;
+                    }else if(s>=12.0&&s<14.0){
+                        level=6.0;
+                    }else if(s>=14.0&&s<16.0){
+                        level=7.0;
+                    }else if(s>=16.0&&s<18.0){
+                        level=8.0;
+                    }else if(s>=18.0&&s<20.0){
+                        level=9.0;
+                    }else if(s>=20.0&&s<22.0){
+                        level=10.0;
+                    }else if(s>=22.0&&s<24.0){
+                        level=11.0;
+                    }else if(s>=24.0&&s<26.0){
+                        level=12.0;
+                    }else if(s>=26.0&&s<28.0){
+                        level=13.0;
+                    }else{
+                        level=14.0;
+                    }
 
                 vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
                 gl_Position = projectionMatrix * mvPosition;
             }
           </script>
     <script id="fragmentShader" type="x-shader/x-fragment">
-                    #ifdef GL_ES
-            //precision mediump float;
-            #endif
+
+            precision highp float;
+            in float level;
+            uniform vec3 colorList[15];
             uniform vec3 color;
-            varying float vSize;
-            uniform float points_number;
-            varying float opacity;
+
+            in float opacity;
+            out vec4 fragColor;
             void main(){
-
-                gl_FragColor = vec4(color,opacity);
-
+                fragColor = vec4(colorList[int(level)].rgb,opacity);//colorList[int(level)].rgb
             }
           </script>
 </body>
